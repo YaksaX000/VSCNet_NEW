@@ -1,19 +1,12 @@
-import scipy.io as sio
-import numpy as np
+from build_dataset import FundusDataset 
 
-# load mat file
-data = sio.loadmat('data_food101_demo/ingredient_all_feature.mat')
+dataset = FundusDataset(
+    image_root="/media/storage/eye/TSGH/fundus_processed/images",
+    json_path="/media/storage/eye/TSGH/Ophthal1117_processed_V3/matched_data/FundusImages_VF_match_60.json"
+)
 
-print("Keys in MAT file:")
-print(data.keys())
+img, sem = dataset[0]
 
-mat = data['ingredient_all_feature']
-
-print("\nMatrix shape:")
-print(mat.shape)
-
-print("\nUnique values:")
-print(np.unique(mat))
-
-print("\nFirst row example:")
-print(mat[0])
+print(sem)
+print(sem.shape)
+print(sem.sum())

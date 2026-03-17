@@ -48,7 +48,7 @@ class dataset_for_classification(torch.utils.data.Dataset):
             img = self.transform(img)
         # get index vector for gru input
         # words = self.words[label]
-        words = # get corresponding tags of the image
+        # words =  # get corresponding tags of the image
         return [img, words], label
     
     def __len__(self):
@@ -112,3 +112,106 @@ class dataset_for_fusion(torch.utils.data.Dataset):
     
     def __len__(self):
         return len(self.label)
+
+
+
+
+
+
+
+import os
+import json
+import torch
+from torch.utils.data import Dataset
+from PIL import Image
+
+
+class FundusDataset(Dataset):
+    def __init__(self, image_root, json_path, transform=None):
+        """
+        image_root: 圖片根目錄，例如 /.../fundus_processed/images
+        json_path: 你的 JSON 檔路徑
+        transform: torchvision 的 transform（resize, normalize 等）
+        """
+
+        self.image_root = image_root
+        self.transform = transform
+
+        # 讀取 JSON（整包資料）
+        with open(json_path, 'r') as f:
+            raw_data = json.load(f)
+
+        self.data = raw_data["data"]
+
+        # 把巢狀 JSON 攤平成「一筆一筆 sample」
+        self.samples = []
+
+        for patient_id in self.data:
+            for eye in self.data[patient_id]:
+                for date in self.data[patient_id][eye]:
+                    info = self.data[patient_id][eye][date]
+
+                    # 組出 image path（依你現在命名規則）
+                    # e.g. /images/6510/L_20190430_1.jpg
+                    img_name = f"{eye}_{date}_1.jpg"
+                    img_path = os.path.join(self.image_root, patient_id, img_name)
+
+                    # 每一筆 sample 存：
+                    # - 圖片路徑
+                    # - cluster_mtd_label（等等轉 one-hot）
+                    self.samples.append({
+                        "img_path": img_path,
+                        "cluster": info["cluster_mtd_label"]
+                    })
+
+    def __len__(self):
+        """
+        回傳 dataset 有幾筆資料
+        """
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        """
+        PyTorch 每次會呼叫這個，拿一筆資料
+        """
+
+        sample = self.samples[idx]
+
+        # 讀圖片
+        image = Image.open(sample["img_path"]).convert("RGB")
+
+        # 做 preprocessing（如果有）
+        if self.transform:
+            image = self.transform(image)
+
+        # Ex：把 [3,3,2,3,2,3] → 24-dim one-hot
+        semantic = self.cluster_to_onehot(sample["cluster"])
+
+        # 最終回傳：
+        # image: (3, H, W)
+        # semantic: (24,)
+        return image, semantic
+
+    def cluster_to_onehot(self, cluster):
+        """
+        cluster: [3,3,2,3,2,3]（6個region）
+        回傳: 24-dim one-hot vector
+        """
+
+        #  初始化 24 維全 0
+        onehot = [0] * 24
+
+        # 每個 region 做 mapping
+        for i, severity in enumerate(cluster):
+            # i = region index (0~5)
+            # severity = 0~3
+
+            # 核心公式：
+            # 每個 region 有 4 個位置
+            # 所以 index = region * 4 + severity
+            index = i * 4 + severity
+
+            onehot[index] = 1
+
+        # 轉成 PyTorch tensor（給模型用）
+        return torch.tensor(onehot, dtype=torch.float)
